@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ssh-conn"
+version = "1.0.0"
+description = "CLI per gestire connessioni SSH a istanze cloud con tabella raggruppata, fuzzy search, health check e import da ~/.ssh/config."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "Valerio Pescetelli", email = "teamdev1@meshble.com" },
+]
+keywords = ["ssh", "cli", "connection-manager", "devops"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Networking",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "rich>=13.7,<14",
+    "prompt_toolkit>=3.0,<4",
+    "typer>=0.12,<1",
+]
+
+[project.scripts]
+ssh-conn = "ssh_conn.cli:run"
+
+[project.urls]
+"Source" = "https://github.com/vpescetelli/ssh-conn"
+
+[tool.setuptools]
+packages = ["ssh_conn"]

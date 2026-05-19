@@ -1,191 +1,180 @@
-# SSH Manager
+# ssh-conn
 
-Un'applicazione Python interattiva per gestire e organizzare le connessioni SSH. Permette di salvare configurazioni SSH, modificarle e connettersi facilmente ai server remoti attraverso un'interfaccia a menu colorata.
+CLI Python per gestire connessioni SSH a molte istanze cloud con tabella raggruppata, fuzzy search, health check parallelo, CLI args e import da `~/.ssh/config`.
 
-## 🚀 Funzionalità
+## Caratteristiche
 
-- ✅ Gestione delle istanze SSH (aggiungi, modifica, elimina)
-- ✅ Supporto per chiavi SSH personalizzate
-- ✅ Configurazione personalizzabile delle porte
-- ✅ Interfaccia utente colorata e intuitiva
-- ✅ Salvataggio automatico delle configurazioni
-- ✅ Connessione diretta alle istanze configurate
+- **Tabella raggruppata** per provider (OVH, GCP, CL, OVS, Odoo, Buyprotect, other) con colori `rich`.
+- **Auto-detect** di gruppo e tag dal nome dell'istanza (es. `OVH - blendX Demo` → gruppo `OVH`, tag `blendx demo`). Nessuna migrazione del JSON richiesta.
+- **Fuzzy search** su nome, host, user e tag per connessione rapida tra decine di istanze.
+- **Sezione "Recenti"** in cima alla lista: le ultime istanze a cui ti sei connesso, con timestamp relativo.
+- **Health check parallelo** via `asyncio.open_connection` (TCP) per vedere quali istanze rispondono prima di tentare la connessione.
+- **CLI args con Typer**: `ssh-conn connect <name>`, `ssh-conn list ovh prod`, `ssh-conn health`, ecc. Senza argomenti: modalità interattiva.
+- **Import da `~/.ssh/config`** per unificarsi con la configurazione SSH di sistema.
+- **Installabile globalmente** via `pipx` con binario `ssh-conn` sul PATH.
 
-## 📋 Prerequisiti
+## Installazione
 
-- Python 3.6 o superiore
-- Sistema operativo: Linux, macOS, o Windows
-- Accesso al terminale/command prompt
-
-## 🔧 Installazione
-
-### Metodo 1: Usando Makefile (Raccomandato)
-
-Il progetto include un Makefile che automatizza l'installazione:
+### Opzione 1 — Globale via pipx (consigliata)
 
 ```bash
-# Inizializza l'ambiente virtuale e installa le dipendenze
-make init
-
-# Avvia l'applicazione
-make start
+brew install pipx        # se non già installato
+make install             # equivalente a: pipx install --force .
+ssh-conn --help
 ```
 
-### Metodo 2: Installazione Manuale
+Dopo l'install, `ssh-conn` è disponibile da qualsiasi directory. La config si trova automaticamente con questa priorità:
 
-Se preferisci installare manualmente:
+1. `--config PATH`
+2. `$SSH_CONN_CONFIG`
+3. `./ssh_config.json` (se presente nella cwd — retrocompatibilità)
+4. `~/.config/ssh-conn/config.json` (default)
+
+Per continuare a usare il file esistente in questo progetto:
 
 ```bash
-# 1. Clona o scarica il progetto
-git clone <repository-url>
-cd ssh-manager
-
-# 2. Crea un ambiente virtuale Python
-python3 -m venv .venv
-
-# 3. Attiva l'ambiente virtuale
-# Su Linux/macOS:
-source .venv/bin/activate
-# Su Windows:
-.venv\Scripts\activate
-
-# 4. Installa le dipendenze
-pip install -r requirements.txt
-
-# 5. Avvia l'applicazione
-python3 main.py
+export SSH_CONN_CONFIG=/Users/vpescetelli/ssh-conn/ssh_config.json
+# oppure copia in ~/.config:
+mkdir -p ~/.config/ssh-conn
+cp ssh_config.json ~/.config/ssh-conn/config.json
 ```
 
-## 📁 Struttura del Progetto
-
-```
-ssh-manager/
-├── main.py              # Script principale
-├── requirements.txt     # Dipendenze Python
-├── Makefile            # Automazione build/run
-├── .gitignore          # File da ignorare in Git
-└── ssh_config.json     # Configurazioni SSH (generato automaticamente)
-```
-
-## 🖥️ Utilizzo
-
-### Avvio dell'Applicazione
+### Opzione 2 — Sviluppo locale
 
 ```bash
-make start
+make init           # crea .venv + dipendenze
+make dev-install    # pip install -e .  (binario in .venv/bin/ssh-conn)
+make start          # alternativa: python main.py (modalità interattiva)
 ```
 
-oppure:
+## Uso
+
+### Modalità interattiva
 
 ```bash
-python3 main.py
+ssh-conn
 ```
 
-### Menu Principale
+Menu principale:
 
-L'applicazione presenta un menu interattivo con le seguenti opzioni:
+```
+1. Lista istanze
+2. Connetti a istanza
+3. Aggiungi istanza
+4. Modifica istanza
+5. Elimina istanza
+6. Health check
+7. Importa da ~/.ssh/config
+q. Esci
+```
 
-1. **Lista istanze**: Visualizza tutte le istanze SSH configurate
-2. **Aggiungi istanza**: Crea una nuova configurazione SSH
-3. **Modifica istanza**: Modifica una configurazione esistente
-4. **Elimina istanza**: Rimuove una configurazione
-5. **Connetti a istanza**: Stabilisce una connessione SSH
-6. **Esci**: Termina l'applicazione
+### CLI args
 
-### Aggiunta di una Nuova Istanza
+```bash
+ssh-conn connect samir              # fuzzy match → connette
+ssh-conn list ovh prod              # tabella filtrata
+ssh-conn list --health              # tabella + reachability
+ssh-conn health                     # check parallelo su tutte
+ssh-conn health ovh                 # solo OVH
+ssh-conn edit "OVH - Nixie Core"    # modifica
+ssh-conn delete vespa               # elimina con conferma
+ssh-conn import-ssh --source ~/.ssh/config
+ssh-conn config-path                # stampa il file di config in uso
+ssh-conn --config /path/to/cfg.json list   # override esplicito
+ssh-conn --help                     # vedi tutti i subcomandi
+```
 
-Quando aggiungi una nuova istanza, dovrai fornire:
+### Filtri
 
-- **Nome istanza**: Un nome identificativo (es. "Server Produzione")
-- **Hostname**: L'indirizzo del server (es. "192.168.1.100" o "example.com")
-- **Username**: Il nome utente per l'accesso SSH
-- **Porta**: La porta SSH (default: 22)
-- **Chiave SSH**: (Opzionale) Percorso alla chiave privata SSH
+Il filtro è case-insensitive e funziona come AND su tutti i termini, cercando in:
+- nome istanza
+- hostname
+- username
+- gruppo (OVH/GCP/CL/...)
+- tag
 
-### Esempio di Configurazione
+Esempi:
+- `list ovh` → tutte le OVH
+- `list blendx prod` → tutte quelle con blendX e prod
+- `list ubuntu` → tutte quelle con utente ubuntu
 
-```json
-{
-  "Server Produzione": {
-    "hostname": "prod.example.com",
-    "username": "admin",
-    "port": 22,
-    "key_path": "/home/user/.ssh/id_ed25519"
-  },
-  "Server Test": {
-    "hostname": "test.example.com",
-    "username": "developer",
-    "port": 2222,
-    "key_path": null
+### Fuzzy connect
+
+`ssh-conn connect <query>` risolve in ordine:
+1. Match esatto sul nome.
+2. Match case-insensitive.
+3. Substring univoco.
+4. Match ambiguo → mostra i candidati e annulla.
+
+Esempi: `samir`, `nixie core`, `blendx demo`.
+
+## Struttura
+
+```
+ssh-conn/
+├── main.py                # entry-point shim (legacy: python main.py)
+├── pyproject.toml         # metadata + entry point ssh-conn
+├── requirements.txt       # dipendenze dev
+├── Makefile               # init / start / install / dev-install / clean
+├── ssh_config.json        # config istanze locale (gitignored)
+└── ssh_conn/              # package
+    ├── __init__.py
+    ├── __main__.py        # python -m ssh_conn
+    ├── cli.py             # Typer CLI app
+    ├── commands.py        # business logic (interactive + by-name)
+    ├── store.py           # SSHInstance + JSON + auto-detect tag
+    ├── ui.py              # rich rendering + prompt_toolkit
+    ├── history.py         # tracking ultimo accesso
+    ├── health.py          # async TCP reachability
+    └── ssh_import.py      # parser ~/.ssh/config
+```
+
+## Storage
+
+- **Istanze**: vedi la priorità nella sezione Installazione. Schema JSON:
+  ```json
+  {
+    "Nome istanza": {
+      "hostname": "1.2.3.4",
+      "username": "ubuntu",
+      "port": 22,
+      "key_path": "/Users/.../.ssh/id_ed25519"
+    }
   }
-}
+  ```
+  I campi `group` e `tags` sono derivati in-memory dal nome — non vengono persistiti.
+
+- **History**: `~/.config/ssh-conn/history.json` (timestamp ISO per ogni nome). Override con `SSH_CONN_HISTORY=/path/to/history.json`.
+
+## Health check
+
+Tenta una connessione TCP (non SSH) sulla porta configurata con timeout di 1.5s, in parallelo via `asyncio`.
+
+- `●` verde: porta aperta (raggiungibile).
+- `●` rosso: connessione rifiutata o errore di rete.
+- `●` giallo: timeout.
+
+Su 68 istanze il check completo dura circa 2-3 secondi.
+
+## Dipendenze
+
+```
+rich>=13.7,<14
+prompt_toolkit>=3.0,<4
+typer>=0.12,<1
 ```
 
-## 🔧 Comandi Makefile
+Niente `paramiko`: la connessione SSH passa per `subprocess` chiamando il binario `ssh` di sistema.
+
+## Limitazioni note
+
+- L'import da `~/.ssh/config` ignora pattern wildcard (`Host *`).
+- L'auto-detect di gruppo cerca il prefisso noto solo all'inizio del nome (es. `Schalcon GCP` finisce in `other`, non in `GCP`).
+- Su terminali senza TTY (script/pipe) `prompt_toolkit` mostra un warning ma resta funzionante per i comandi non interattivi.
+
+## Disinstallazione
 
 ```bash
-make help    # Mostra tutti i comandi disponibili
-make init    # Inizializza l'ambiente di sviluppo
-make start   # Avvia l'applicazione
-make clean   # Rimuove l'ambiente virtuale e i file temporanei
+make uninstall      # pipx uninstall ssh-conn
+make clean          # rimuove .venv, build/, dist/, *.egg-info
 ```
-
-## 📦 Dipendenze
-
-- **paramiko**: Libreria per connessioni SSH
-- **inquirer**: Interfaccia interattiva per il terminale
-- **colorama**: Supporto per colori nel terminale (cross-platform)
-
-## 🔐 Gestione delle Chiavi SSH
-
-L'applicazione supporta:
-
-- Chiavi SSH personalizzate (specificando il percorso)
-- Chiave SSH di default (`~/.ssh/id_ed25519`)
-- Connessioni tramite password (senza chiave)
-
-### Generazione di una Nuova Chiave SSH
-
-Se non hai una chiave SSH, puoi generarla con:
-
-```bash
-ssh-keygen -t ed25519 -C "tuo-email@example.com"
-```
-
-## 🐛 Risoluzione Problemi
-
-### Errore "L'ambiente virtuale non esiste"
-
-```bash
-make clean
-make init
-```
-
-### Errore di Connessione SSH
-
-- Verifica che l'hostname e la porta siano corretti
-- Controlla che la chiave SSH abbia i permessi corretti (600)
-- Assicurati che il server SSH sia in esecuzione
-
-### Problemi con i Colori su Windows
-
-L'applicazione usa `colorama` per garantire la compatibilità con Windows Terminal.
-
-## 📄 File di Configurazione
-
-Le configurazioni SSH vengono salvate automaticamente in `ssh_config.json` nella directory del progetto. Questo file viene creato automaticamente al primo utilizzo.
-
-⚠️ **Attenzione**: Il file `ssh_config.json` è incluso nel `.gitignore` per motivi di sicurezza.
-
-## 🤝 Contributi
-
-Per contribuire al progetto:
-
-1. Forka il repository
-2. Crea un branch per la tua feature (`git checkout -b feature/nuova-funzionalita`)
-3. Committa le tue modifiche (`git commit -am 'Aggiungi nuova funzionalità'`)
-4. Pusha il branch (`git push origin feature/nuova-funzionalita`)
-5. Crea una Pull Request
----
-
-**Nota**: Assicurati di non condividere mai file di configurazione contenenti informazioni sensibili come percorsi di chiavi private o dettagli dei server.
