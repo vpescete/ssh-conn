@@ -30,8 +30,11 @@ Dopo l'install, `ssh-conn` (o `sshc`) è disponibile da qualsiasi directory. La 
 
 1. `--config PATH`
 2. `$SSH_CONN_CONFIG`
-3. `./ssh_config.json` (se presente nella cwd — retrocompatibilità)
-4. `~/.config/ssh-conn/config.json` (default)
+3. `~/.config/ssh-conn/config.json` (default, **indipendente dalla cartella corrente**)
+
+Un eventuale `./ssh_config.json` legacy (vecchie versioni) viene **copiato una tantum**
+nella sede canonica al primo avvio (e durante `make install`), così non perdi le
+istanze già presenti. L'originale resta dov'è.
 
 Per continuare a usare il file esistente in questo progetto:
 

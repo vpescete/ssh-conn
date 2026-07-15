@@ -26,7 +26,7 @@ _STYLE = Style.from_dict(
         "nomatch": "ansiyellow",
         "label": "ansicyan bold",
         "counter": "ansimagenta",
-        "hint": "ansiblack bold",
+        "hint": "ansibrightblack",
     }
 )
 
