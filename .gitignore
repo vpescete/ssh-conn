@@ -1,5 +1,9 @@
 ssh_config.json
 .venv
+venv/
+/bin/
+/lib/
+/pyvenv.cfg
 __pycache__/
 *.pyc
 build/
