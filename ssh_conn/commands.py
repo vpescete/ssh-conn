@@ -73,6 +73,19 @@ def resolve_name(
     return None
 
 
+def last_used_name(instances: dict[str, store.SSHInstance]) -> str | None:
+    recent = history.recent_names(known=set(instances.keys()), limit=1)
+    return recent[0] if recent else None
+
+
+def connect_last(instances: dict[str, store.SSHInstance]) -> int:
+    name = last_used_name(instances)
+    if not name:
+        ui.print_warning("Nessuna connessione recente da riprendere.")
+        return 1
+    return connect_by_name(instances, name)
+
+
 def connect_by_name(
     instances: dict[str, store.SSHInstance], name: str
 ) -> int:
@@ -83,7 +96,7 @@ def connect_by_name(
     if inst.key_path:
         cmd += ["-i", os.path.expanduser(inst.key_path)]
     cmd.append(f"{inst.username}@{inst.hostname}")
-    ui.print_info(f"Connessione: {' '.join(cmd)}")
+    ui.print_connecting(name, " ".join(cmd))
     history.record_access(name)
     try:
         result = subprocess.run(cmd)
@@ -99,10 +112,20 @@ def list_view(
     instances: dict[str, store.SSHInstance],
     filter_terms: Iterable[str] = (),
     check_health: bool = False,
-) -> None:
-    filtered = ui.filter_instances(instances, filter_terms)
-    health_map = health.check_reachability(filtered) if check_health else None
-    ui.render_instance_table(filtered, health=health_map)
+    show_numbers: bool = False,
+) -> dict[str, store.SSHInstance]:
+    terms = [t for t in filter_terms if t]
+    filtered = ui.filter_instances(instances, terms)
+    if instances and terms and not filtered:
+        ui.print_warning(f"Nessun risultato per i filtri: {' '.join(terms)}")
+        ui.print_info("I filtri sono in AND su nome, host, user, gruppo e tag.")
+        return {}
+    health_map = None
+    if check_health:
+        with ui.status(f"🩺 Health check su {len(filtered)} istanze..."):
+            health_map = health.check_reachability(filtered)
+    ui.render_instance_table(filtered, health=health_map, show_numbers=show_numbers)
+    return filtered
 
 
 def list_interactive(instances: dict[str, store.SSHInstance]) -> None:
@@ -111,7 +134,17 @@ def list_interactive(instances: dict[str, store.SSHInstance]) -> None:
     if raw is None:
         return
     terms = raw.split() if raw else []
-    list_view(instances, terms)
+    filtered = list_view(instances, terms, show_numbers=True)
+    if not filtered:
+        return
+    order = ui.ordered_names(filtered)
+    choice = ui.prompt_optional("Numero da connettere (Invio per tornare al menu)")
+    if choice is None or not choice:
+        return
+    if not choice.isdigit() or not 1 <= int(choice) <= len(order):
+        ui.print_error(f"Numero non valido: '{choice}'.")
+        return
+    connect_by_name(filtered, order[int(choice) - 1])
 
 
 def connect_interactive(instances: dict[str, store.SSHInstance]) -> None:
@@ -179,10 +212,14 @@ def add_interactive(instances: dict[str, store.SSHInstance]) -> None:
         group=group,
         tags=tags,
     )
+    ui.print_info(f"\n=== Riepilogo '{name}' (gruppo {group}) ===")
+    ui.print_ssh_command(inst)
+    if not ui.prompt_confirm("Salvare questa istanza?", default=True):
+        ui.print_warning("Annullato, niente salvato.")
+        return
     instances[name] = inst
     _save(instances)
     ui.print_success(f"Istanza '{name}' aggiunta.")
-    ui.print_ssh_command(inst)
 
 
 def edit_interactive(
@@ -289,8 +326,8 @@ def health_view(instances: dict[str, store.SSHInstance]) -> None:
     if not instances:
         ui.print_warning("Nessuna istanza da controllare.")
         return
-    ui.print_info(f"Health check in corso su {len(instances)} istanze...")
-    results = health.check_reachability(instances)
+    with ui.status(f"🩺 Health check su {len(instances)} istanze..."):
+        results = health.check_reachability(instances)
     ui.render_instance_table(instances, health=results)
 
 

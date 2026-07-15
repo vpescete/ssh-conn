@@ -10,14 +10,15 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from . import history
+from . import history, selector
 from .health import Status
 from .store import SSHInstance
 
+# Distinct shapes (not only colour) so status is legible for colour-blind users.
 HEALTH_GLYPHS: dict[Status, str] = {
-    True: "[green]●[/green]",
-    False: "[red]●[/red]",
-    None: "[yellow]●[/yellow]",
+    True: "[green]✓[/green]",
+    False: "[red]✗[/red]",
+    None: "[yellow]?[/yellow]",
 }
 
 console = Console()
@@ -32,6 +33,16 @@ GROUP_COLORS: dict[str, str] = {
     "other": "white",
 }
 
+GROUP_ICONS: dict[str, str] = {
+    "OVH": "☁️",
+    "GCP": "🌐",
+    "CL": "🔷",
+    "OVS": "🟣",
+    "Odoo": "🟡",
+    "Buyprotect": "🛒",
+    "other": "📦",
+}
+
 _GROUP_ORDER: tuple[str, ...] = ("OVH", "GCP", "CL", "OVS", "Odoo", "Buyprotect", "other")
 
 _session: PromptSession = PromptSession()
@@ -40,6 +51,18 @@ _pt_style = PTStyle.from_dict({"prompt": "ansicyan bold"})
 
 def clear_screen() -> None:
     console.clear()
+
+
+def status(message: str):
+    """Context manager showing an animated spinner around a blocking task."""
+    return console.status(f"[cyan]{message}[/cyan]", spinner="dots")
+
+
+def pause(message: str = "⏎  Premi Invio per continuare...") -> None:
+    try:
+        _session.prompt(f"\n{message} ")
+    except (KeyboardInterrupt, EOFError):
+        return
 
 
 def format_ssh_command(instance: SSHInstance) -> str:
@@ -52,46 +75,85 @@ def format_ssh_command(instance: SSHInstance) -> str:
     return " ".join(parts)
 
 
+def _print_with_icon(icon: str, style: str, message: str) -> None:
+    lead = ""
+    while message.startswith("\n"):
+        lead += "\n"
+        message = message[1:]
+    console.print(f"{lead}[{style}]{icon} {message}[/{style}]")
+
+
 def print_info(message: str) -> None:
-    console.print(f"[cyan]{message}[/cyan]")
+    _print_with_icon("ℹ️", "cyan", message)
 
 
 def print_success(message: str) -> None:
-    console.print(f"[green]{message}[/green]")
+    _print_with_icon("✅", "green", message)
 
 
 def print_warning(message: str) -> None:
-    console.print(f"[yellow]{message}[/yellow]")
+    _print_with_icon("⚠️", "yellow", message)
 
 
 def print_error(message: str) -> None:
-    console.print(f"[red]{message}[/red]")
+    _print_with_icon("❌", "red", message)
+
+
+def goodbye() -> None:
+    console.print("\n[bold cyan]👋 Arrivederci![/bold cyan]\n")
+
+
+def print_connecting(name: str, command: str) -> None:
+    console.print(f"[bold green]🔌 Connessione a[/] [bold]{name}[/] …")
+    console.print(f"[dim]$ {command}[/dim]")
 
 
 def print_ssh_command(instance: SSHInstance) -> None:
     console.print(
-        f"[cyan]Comando SSH equivalente:[/cyan] "
+        f"[cyan]🔗 Comando SSH equivalente:[/cyan] "
         f"[yellow]{format_ssh_command(instance)}[/yellow]"
     )
 
 
-def render_main_menu() -> None:
+def _menu_options(last_name: str | None) -> list[tuple[str, str]]:
+    options: list[tuple[str, str]] = []
+    if last_name:
+        options.append(("0", f"🔁 Riconnetti all'ultimo ({last_name})"))
+    options += [
+        ("1", "📋 Lista istanze"),
+        ("2", "🔌 Connetti a istanza"),
+        ("3", "➕ Aggiungi istanza"),
+        ("4", "✏️  Modifica istanza"),
+        ("5", "🗑️  Elimina istanza"),
+        ("6", "🩺 Health check"),
+        ("7", "📥 Importa da ~/.ssh/config"),
+        ("q", "🚪 Esci"),
+    ]
+    return options
+
+
+def render_main_menu(last_name: str | None = None, subtitle: str | None = None) -> None:
     menu = Text()
-    menu.append("\n=== SSH Connection Manager ===\n\n", style="bold cyan")
-    options = (
-        ("1", "Lista istanze"),
-        ("2", "Connetti a istanza"),
-        ("3", "Aggiungi istanza"),
-        ("4", "Modifica istanza"),
-        ("5", "Elimina istanza"),
-        ("6", "Health check"),
-        ("7", "Importa da ~/.ssh/config"),
-        ("q", "Esci"),
-    )
-    for key, label in options:
+    menu.append("\n🔐 SSH Connection Manager\n", style="bold cyan")
+    if subtitle:
+        menu.append(f"{subtitle}\n", style="dim")
+    menu.append("\n")
+    for key, label in _menu_options(last_name):
         menu.append(f"  {key}. ", style="bold")
         menu.append(f"{label}\n")
     console.print(menu)
+
+
+def main_menu(last_name: str | None = None, subtitle: str | None = None) -> str | None:
+    """Return the chosen menu key. Navigable on a TTY, typed prompt otherwise."""
+    options = _menu_options(last_name)
+    if selector.is_available():
+        choice = selector.menu_select(
+            options, title="🔐 SSH Connection Manager", subtitle=subtitle
+        )
+        return "q" if choice is None else choice
+    render_main_menu(last_name=last_name, subtitle=subtitle)
+    return prompt_menu_choice(tuple(key for key, _ in options))
 
 
 def filter_instances(
@@ -123,6 +185,21 @@ def _sort_groups(groups: Iterable[str]) -> list[str]:
     return sorted(set(groups), key=key)
 
 
+def ordered_names(instances: dict[str, SSHInstance]) -> list[str]:
+    """Names in the exact order the grouped table renders them.
+
+    Used to map the '#' column shown by render_instance_table back to a name.
+    """
+    grouped: dict[str, list[SSHInstance]] = {}
+    for inst in instances.values():
+        grouped.setdefault(inst.group, []).append(inst)
+    names: list[str] = []
+    for group in _sort_groups(grouped.keys()):
+        for inst in sorted(grouped[group], key=lambda i: i.name.lower()):
+            names.append(inst.name)
+    return names
+
+
 def render_recents(
     instances: dict[str, SSHInstance],
     limit: int = 5,
@@ -132,7 +209,7 @@ def render_recents(
     if not recent:
         return
     table = Table(
-        title="[bold magenta]Recenti[/] [dim](ultimi accessi)[/]",
+        title="[bold magenta]⏱️  Recenti[/] [dim](ultimi accessi)[/]",
         header_style="bold magenta",
         border_style="magenta",
         title_justify="left",
@@ -156,13 +233,19 @@ def render_instance_table(
     instances: dict[str, SSHInstance],
     health: dict[str, Status] | None = None,
     show_recents: bool = True,
+    show_numbers: bool = False,
+    empty_message: str | None = None,
 ) -> None:
     if not instances:
-        console.print("[yellow]Nessuna istanza configurata.[/yellow]")
+        console.print(f"[yellow]{empty_message or 'Nessuna istanza configurata.'}[/yellow]")
         return
 
     if show_recents:
         render_recents(instances, health=health)
+
+    number_map: dict[str, int] = {}
+    if show_numbers:
+        number_map = {name: i for i, name in enumerate(ordered_names(instances), start=1)}
 
     grouped: dict[str, list[SSHInstance]] = {}
     for inst in instances.values():
@@ -171,15 +254,18 @@ def render_instance_table(
     for group in _sort_groups(grouped.keys()):
         members = sorted(grouped[group], key=lambda i: i.name.lower())
         color = GROUP_COLORS.get(group, "white")
+        icon = GROUP_ICONS.get(group, "📦")
         table = Table(
-            title=f"[bold {color}]{group}[/] [dim]({len(members)})[/]",
+            title=f"[bold {color}]{icon} {group}[/] [dim]({len(members)})[/]",
             header_style=f"bold {color}",
             border_style=color,
             title_justify="left",
             show_lines=False,
         )
+        if show_numbers:
+            table.add_column("#", justify="right", style="bold")
         if health is not None:
-            table.add_column("●", justify="center")
+            table.add_column("St", justify="center")
         table.add_column("Nome", style="white")
         table.add_column("Host", style="dim")
         table.add_column("User", style="dim")
@@ -200,6 +286,8 @@ def render_instance_table(
             ]
             if health is not None:
                 row.insert(0, HEALTH_GLYPHS.get(health.get(inst.name), ""))
+            if show_numbers:
+                row.insert(0, str(number_map[inst.name]))
             table.add_row(*row)
         console.print(table)
         console.print("")
@@ -214,8 +302,8 @@ def render_instance_table(
         down = sum(1 for v in health.values() if v is False)
         timeout = sum(1 for v in health.values() if v is None)
         console.print(
-            f"[dim]Reachability:[/] [green]●[/] {up} · "
-            f"[red]●[/] {down} · [yellow]●[/] {timeout}"
+            f"[dim]Reachability:[/] [green]✓[/] {up} · "
+            f"[red]✗[/] {down} · [yellow]?[/] {timeout}"
         )
 
 
@@ -265,6 +353,14 @@ def select_instance_fuzzy(
         console.print("[yellow]Nessuna istanza disponibile.[/yellow]")
         return None
     names = sorted(instances.keys())
+    if selector.is_available():
+        try:
+            # None here means the user cancelled — honour it, don't fall through.
+            return selector.fuzzy_select(names, prompt_label=prompt_label)
+        except Exception as exc:  # noqa: BLE001 — degrade to the typed prompt below
+            console.print(
+                f"[dim]Selettore interattivo non disponibile ({exc}); uso input testuale.[/dim]"
+            )
     completer = FuzzyCompleter(WordCompleter(names, match_middle=True, ignore_case=True))
     try:
         raw = _session.prompt(
