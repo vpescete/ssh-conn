@@ -36,6 +36,7 @@ dependencies = [
 
 [project.scripts]
 ssh-conn = "ssh_conn.cli:run"
+sshc = "ssh_conn.cli:run"
 
 [project.urls]
 "Source" = "https://github.com/vpescetelli/ssh-conn"

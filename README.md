@@ -23,7 +23,10 @@ make install             # equivalente a: pipx install --force .
 ssh-conn --help
 ```
 
-Dopo l'install, `ssh-conn` è disponibile da qualsiasi directory. La config si trova automaticamente con questa priorità:
+L'install espone due comandi equivalenti: `ssh-conn` e l'alias breve `sshc`
+(entrambi avviano la stessa app; senza argomenti partono in modalità interattiva).
+
+Dopo l'install, `ssh-conn` (o `sshc`) è disponibile da qualsiasi directory. La config si trova automaticamente con questa priorità:
 
 1. `--config PATH`
 2. `$SSH_CONN_CONFIG`

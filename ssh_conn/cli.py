@@ -6,7 +6,7 @@ from typing import Optional
 
 import typer
 
-from . import commands, health, ui
+from . import __version__, commands, health, ui
 
 app = typer.Typer(
     help="SSH Connection Manager — gestione istanze SSH.",
@@ -15,6 +15,7 @@ app = typer.Typer(
 )
 
 _MENU_DISPATCH = {
+    "0": commands.connect_last,
     "1": commands.list_interactive,
     "2": commands.connect_interactive,
     "3": commands.add_interactive,
@@ -25,6 +26,21 @@ _MENU_DISPATCH = {
 }
 
 
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"ssh-conn {__version__}")
+        raise typer.Exit()
+
+
+def _complete_instance_names(incomplete: str) -> list[str]:
+    """Shell completion: match configured instance names (failure-tolerant)."""
+    try:
+        instances = commands.load()
+    except (OSError, ValueError):
+        return []
+    return [name for name in instances if incomplete.lower() in name.lower()]
+
+
 def _interactive_loop() -> int:
     try:
         instances = commands.load()
@@ -32,17 +48,20 @@ def _interactive_loop() -> int:
         ui.print_error(f"Impossibile caricare {commands.config_path()}: {exc}")
         return 1
 
-    ui.clear_screen()
     while True:
-        ui.render_main_menu()
-        choice = ui.prompt_menu_choice(("1", "2", "3", "4", "5", "6", "7", "q"))
+        ui.clear_screen()
+        last = commands.last_used_name(instances)
+        subtitle = f"{len(instances)} istanze · config: {commands.config_path()}"
+        choice = ui.main_menu(last_name=last, subtitle=subtitle)
         if choice is None or choice == "q":
-            ui.print_warning("Arrivederci!")
+            ui.goodbye()
             return 0
         if choice == "":
             ui.print_error("Scelta non valida.")
+            ui.pause()
             continue
         _MENU_DISPATCH[choice](instances)
+        ui.pause()
 
 
 @app.callback(invoke_without_command=True)
@@ -51,17 +70,31 @@ def _default(
     config: Optional[str] = typer.Option(
         None, "--config", "-c", help="Path al file di config (override env/default)."
     ),
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        callback=_version_callback,
+        is_eager=True,
+        help="Mostra la versione ed esci.",
+    ),
 ) -> None:
     commands.set_config_path(config)
     if ctx.invoked_subcommand is None:
         raise typer.Exit(code=_interactive_loop())
 
 
-@app.command("connect", help="Connetti a un'istanza per nome (match fuzzy).")
+@app.command("connect", help="Connetti a un'istanza (match fuzzy); senza nome riprende l'ultima.")
 def cmd_connect(
-    name: str = typer.Argument(..., help="Nome o substring dell'istanza."),
+    name: Optional[str] = typer.Argument(
+        None,
+        help="Nome o substring; se omesso riconnette all'ultima usata.",
+        autocompletion=_complete_instance_names,
+    ),
 ) -> None:
     instances = commands.load()
+    if not name:
+        raise typer.Exit(code=commands.connect_last(instances))
     resolved = commands.resolve_name(instances, name)
     if not resolved:
         raise typer.Exit(code=1)
@@ -90,7 +123,9 @@ def cmd_add() -> None:
 
 @app.command("edit", help="Modifica un'istanza esistente.")
 def cmd_edit(
-    name: str = typer.Argument(..., help="Nome dell'istanza."),
+    name: str = typer.Argument(
+        ..., help="Nome dell'istanza.", autocompletion=_complete_instance_names
+    ),
 ) -> None:
     instances = commands.load()
     resolved = commands.resolve_name(instances, name)
@@ -101,7 +136,9 @@ def cmd_edit(
 
 @app.command("delete", help="Elimina un'istanza esistente.")
 def cmd_delete(
-    name: str = typer.Argument(..., help="Nome dell'istanza."),
+    name: str = typer.Argument(
+        ..., help="Nome dell'istanza.", autocompletion=_complete_instance_names
+    ),
 ) -> None:
     instances = commands.load()
     resolved = commands.resolve_name(instances, name)
@@ -121,8 +158,8 @@ def cmd_health(
     if not filtered:
         ui.print_warning("Nessuna istanza dopo i filtri.")
         raise typer.Exit(code=0)
-    ui.print_info(f"Health check in corso su {len(filtered)} istanze...")
-    results = health.check_reachability(filtered)
+    with ui.status(f"🩺 Health check su {len(filtered)} istanze..."):
+        results = health.check_reachability(filtered)
     ui.render_instance_table(filtered, health=results)
 
 

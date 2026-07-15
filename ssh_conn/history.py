@@ -67,9 +67,9 @@ def time_ago(iso_timestamp: str) -> str:
     if seconds < 60:
         return "ora"
     if seconds < 3600:
-        return f"{seconds // 60}m fa"
+        return f"{seconds // 60}min fa"
     if seconds < 86400:
         return f"{seconds // 3600}h fa"
     if seconds < 86400 * 30:
         return f"{seconds // 86400}g fa"
-    return f"{seconds // (86400 * 30)}M fa"
+    return f"{seconds // (86400 * 30)} mesi fa"
