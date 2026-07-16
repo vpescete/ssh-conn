@@ -1,19 +1,35 @@
 """Business logic for ssh-conn commands. Used both by CLI args and interactive loop."""
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
-from . import health, history, ssh_import, store, ui
+from . import (
+    dashboard,
+    health,
+    history,
+    selector,
+    settings,
+    ssh_import,
+    store,
+    theme,
+    ui,
+)
 
 DEFAULT_KEY_PATH = "~/.ssh/id_ed25519"
 DEFAULT_USER_CONFIG = Path.home() / ".config" / "ssh-conn" / "config.json"
+DEFAULT_TRASH_PATH = Path.home() / ".config" / "ssh-conn" / "trash.json"
 LEGACY_CWD_CONFIG = Path("ssh_config.json")
 
+VALID_UI: tuple[str, ...] = settings.VALID_UI_MODES
+
 _CONFIG_OVERRIDE: Path | None = None
+_UI_OVERRIDE: str | None = None
 
 
 def set_config_path(path: str | Path | None) -> None:
@@ -55,6 +71,26 @@ def migrate_legacy_config() -> Path | None:
         "sede canonica (usata da qualsiasi directory). L'originale è rimasto al suo posto."
     )
     return target
+
+
+def set_ui_mode(value: str | None) -> None:
+    """Explicit --ui override; None re-enables env/settings resolution."""
+    global _UI_OVERRIDE
+    _UI_OVERRIDE = value if value in VALID_UI else None
+
+
+def has_ui_override() -> bool:
+    return _UI_OVERRIDE is not None
+
+
+def ui_mode() -> str:
+    """Active interactive UI: --ui > $SSH_CONN_UI > settings.json > menu."""
+    if _UI_OVERRIDE is not None:
+        return _UI_OVERRIDE
+    env = os.environ.get("SSH_CONN_UI", "").strip().lower()
+    if env in VALID_UI:
+        return env
+    return settings.ui_preference() or "menu"
 
 
 def load() -> dict[str, store.SSHInstance]:
@@ -342,9 +378,12 @@ def delete_interactive(
     if not ui.prompt_confirm(f"Eliminare '{name}'?", default=False):
         ui.print_warning("Annullato.")
         return
+    deleted = instances[name]
     del instances[name]
     _save(instances)
+    _stash_deleted(deleted)
     ui.print_success(f"Istanza '{name}' eliminata.")
+    ui.print_info("Ripristinala con: ssh-conn restore")
 
 
 def health_view(instances: dict[str, store.SSHInstance]) -> None:
@@ -412,3 +451,167 @@ def import_ssh_config_interactive(
         ui.print_warning("Annullato.")
         return
     import_ssh_config(instances, source=source, overwrite=overwrite)
+
+
+# ------------------------------------------------------------------ trash --
+
+
+def _trash_path() -> Path:
+    env = os.environ.get("SSH_CONN_TRASH")
+    return Path(env).expanduser() if env else DEFAULT_TRASH_PATH
+
+
+def _stash_deleted(inst: store.SSHInstance) -> None:
+    """Keep the last deleted instance so `ssh-conn restore` can undo."""
+    entry = {
+        "name": inst.name,
+        "data": inst.to_dict(),
+        "deleted_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+    path = _trash_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            json.dump(entry, f, indent=2)
+    except OSError as exc:
+        ui.print_warning(f"Cestino non aggiornato ({exc}): ripristino non disponibile.")
+
+
+def _load_trash() -> dict | None:
+    path = _trash_path()
+    if not path.exists():
+        return None
+    try:
+        with path.open("r") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or "name" not in data or "data" not in data:
+        return None
+    return data
+
+
+def restore_last(instances: dict[str, store.SSHInstance]) -> int:
+    """Undo the most recent delete. Returns a process exit code."""
+    entry = _load_trash()
+    if entry is None:
+        ui.print_warning("Nessuna istanza eliminata di recente da ripristinare.")
+        return 1
+    name = str(entry["name"])
+    if name in instances and not ui.prompt_confirm(
+        f"'{name}' esiste già. Sovrascrivere?", default=False
+    ):
+        ui.print_warning("Annullato.")
+        return 1
+    try:
+        instances[name] = store.instance_from_dict(name, entry["data"])
+    except (KeyError, TypeError, ValueError) as exc:
+        ui.print_error(f"Dati del cestino non validi: {exc}")
+        return 1
+    _save(instances)
+    try:
+        _trash_path().unlink()
+    except OSError:
+        pass  # restored anyway; a stale trash file is harmless
+    ui.print_success(f"Istanza '{name}' ripristinata.")
+    return 0
+
+
+# ----------------------------------------------------------------- doctor --
+
+
+def doctor() -> int:
+    """Diagnose environment and configuration. Returns a process exit code."""
+    problems = 0
+
+    def check(is_ok: bool, label: str, detail: str, warn_only: bool = False) -> None:
+        nonlocal problems
+        icon = "✅" if is_ok else ("⚠️ " if warn_only else "❌")
+        if not is_ok and not warn_only:
+            problems += 1
+        ui.console.print(f"  {icon} [bold]{label}[/]: {detail}")
+
+    ssh_path = shutil.which("ssh")
+    check(bool(ssh_path), "ssh", ssh_path or "non trovato nel PATH")
+
+    path = config_path()
+    if path.exists():
+        try:
+            instances = store.load_instances(path)
+            check(True, "config", f"{path} ({len(instances)} istanze)")
+        except (OSError, ValueError) as exc:
+            instances = {}
+            check(False, "config", f"{path} non leggibile: {exc}")
+    else:
+        instances = {}
+        check(True, "config", f"{path} non esiste (creata al primo salvataggio)")
+
+    missing = [
+        i.name
+        for i in instances.values()
+        if i.key_path and not Path(os.path.expanduser(i.key_path)).exists()
+    ]
+    loose = [
+        i.name
+        for i in instances.values()
+        if i.key_path
+        and Path(os.path.expanduser(i.key_path)).exists()
+        and Path(os.path.expanduser(i.key_path)).stat().st_mode & 0o077
+    ]
+    check(
+        not missing,
+        "chiavi",
+        "tutte presenti" if not missing else f"mancanti per: {', '.join(missing[:5])}",
+        warn_only=True,
+    )
+    check(
+        not loose,
+        "permessi chiavi",
+        "ok" if not loose else f"troppo aperti (chmod 600): {', '.join(loose[:5])}",
+        warn_only=True,
+    )
+    check(
+        selector.is_available(),
+        "terminale",
+        "interattivo (TTY)" if selector.is_available() else "non interattivo",
+        warn_only=True,
+    )
+    check(True, "tema", theme.active_mode())
+    check(True, "interfaccia", ui_mode())
+
+    if problems:
+        ui.print_error(f"{problems} problema/i da risolvere.")
+        return 1
+    ui.print_success("Tutto ok!")
+    return 0
+
+
+# -------------------------------------------------------------- dashboard --
+
+
+def dashboard_loop(instances: dict[str, store.SSHInstance]) -> str:
+    """Drive the dashboard: run the action it returns, then re-enter.
+
+    Returns "menu" (switch to the classic menu) or "quit".
+    """
+    health_cache: dict[str, health.Status] = {}
+    while True:
+        action, name = dashboard.run(instances, health_cache)
+        if action in ("quit", "menu"):
+            return action
+        if action == "connect" and name:
+            if connect_by_name(instances, name) != 0:
+                ui.pause()
+            continue
+        if action == "edit" and name:
+            edit_interactive(instances, name=name)
+        elif action == "delete" and name:
+            delete_interactive(instances, name=name)
+            health_cache.pop(name, None)
+        elif action == "new":
+            add_interactive(instances)
+        elif action == "import":
+            import_ssh_config_interactive(instances)
+        else:
+            continue
+        ui.pause()
