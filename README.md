@@ -7,6 +7,7 @@ CLI Python per gestire connessioni SSH a molte istanze cloud con tabella raggrup
 - **Tabella raggruppata** per provider (OVH, GCP, CL, OVS, Odoo, Buyprotect, other) con colori `rich`.
 - **Auto-detect** di gruppo e tag dal nome dell'istanza (es. `OVH - blendX Demo` → gruppo `OVH`, tag `blendx demo`). Nessuna migrazione del JSON richiesta.
 - **Fuzzy search** su nome, host, user e tag per connessione rapida tra decine di istanze.
+- **Dashboard a schermo intero** (opzionale): lista ordinata per frecency con health check live in background, filtro fuzzy con evidenziazione dei caratteri, azioni da tastiera, pannello dettagli e aiuto integrato. Il menu classico resta il default: scegli tu quale usare.
 - **Sezione "Recenti"** in cima alla lista: le ultime istanze a cui ti sei connesso, con timestamp relativo.
 - **Health check parallelo** via `asyncio.open_connection` (TCP) per vedere quali istanze rispondono prima di tentare la connessione.
 - **CLI args con Typer**: `ssh-conn connect <name>`, `ssh-conn list ovh prod`, `ssh-conn health`, ecc. Senza argomenti: modalità interattiva.
@@ -71,8 +72,33 @@ Menu principale:
 5. Elimina istanza
 6. Health check
 7. Importa da ~/.ssh/config
+d. Dashboard (interfaccia a schermo intero)
 q. Esci
 ```
+
+### Dashboard (interfaccia a schermo intero)
+
+Superficie unica in stile fzf/k9s: le istanze più usate in cima (frecency), health
+check che si popola in background, filtro fuzzy live. Il menu classico resta il
+default; la dashboard si attiva con la voce `d`, con `--ui dashboard`, con
+`SSH_CONN_UI=dashboard` o in modo permanente con `ssh-conn ui dashboard`.
+Alla prima prova l'app chiede se renderla predefinita (scelta salvata in
+`~/.config/ssh-conn/settings.json`).
+
+Tasti principali:
+
+| Tasto | Azione |
+|---|---|
+| `⏎` | connetti alla selezionata |
+| `↑↓` / PgSu/PgGiù | naviga |
+| testo | filtra (fuzzy) |
+| `Ctrl-E` / `Ctrl-D` / `Ctrl-N` | modifica / elimina / nuova |
+| `Ctrl-T` | (ri)esegui health check |
+| `Ctrl-Y` | copia comando ssh negli appunti |
+| `Ctrl-O` | pannello dettagli on/off |
+| `F3` | importa da ~/.ssh/config |
+| `F1` / `F2` | aiuto / menu classico |
+| `Esc` | svuota filtro, poi esci |
 
 ### CLI args
 
@@ -87,6 +113,10 @@ ssh-conn delete vespa               # elimina con conferma
 ssh-conn import-ssh --source ~/.ssh/config
 ssh-conn config-path                # stampa il file di config in uso
 ssh-conn --config /path/to/cfg.json list   # override esplicito
+ssh-conn --ui dashboard             # avvia direttamente la dashboard
+ssh-conn ui dashboard               # salva la dashboard come predefinita
+ssh-conn doctor                     # diagnostica ambiente e configurazione
+ssh-conn restore                    # ripristina l'ultima istanza eliminata
 ssh-conn --help                     # vedi tutti i subcomandi
 ```
 
@@ -150,7 +180,9 @@ ssh-conn/
   ```
   I campi `group` e `tags` sono derivati in-memory dal nome — non vengono persistiti.
 
-- **History**: `~/.config/ssh-conn/history.json` (timestamp ISO per ogni nome). Override con `SSH_CONN_HISTORY=/path/to/history.json`.
+- **History**: `~/.config/ssh-conn/history.json` — per ogni nome `{"last": "<ISO>", "count": n}` (usato per Recenti e per l'ordinamento frecency della dashboard; il vecchio formato solo-timestamp viene letto senza migrazione). Override con `SSH_CONN_HISTORY=/path/to/history.json`.
+- **Preferenze**: `~/.config/ssh-conn/settings.json` (es. interfaccia predefinita `{"ui": "menu"}`). Override con `SSH_CONN_SETTINGS`.
+- **Cestino**: `~/.config/ssh-conn/trash.json` — l'ultima istanza eliminata, ripristinabile con `ssh-conn restore`. Override con `SSH_CONN_TRASH`.
 
 ## Health check
 

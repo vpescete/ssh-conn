@@ -17,18 +17,23 @@ from prompt_toolkit.layout.controls import BufferControl, FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.styles import Style
 
+from . import theme
+
 MAX_VISIBLE = 15
 
-_STYLE = Style.from_dict(
-    {
-        "selected": "reverse",
-        "item": "",
-        "nomatch": "ansiyellow",
-        "label": "ansicyan bold",
-        "counter": "ansimagenta",
-        "hint": "ansibrightblack",
-    }
-)
+
+def _build_style() -> Style:
+    """Built at app time so 'hint' uses the active theme's readable grey."""
+    return Style.from_dict(
+        {
+            "selected": "reverse",
+            "item": "",
+            "nomatch": "ansiyellow",
+            "label": "ansicyan bold",
+            "counter": "ansimagenta",
+            "hint": theme.active_palette().muted,
+        }
+    )
 
 
 def is_available() -> bool:
@@ -53,6 +58,22 @@ def _subsequence_score(query: str, text: str) -> tuple[int, int] | None:
         last = idx
         pos = idx + 1
     return (last - (first or 0), first or 0)
+
+
+def subsequence_positions(query: str, text: str) -> list[int] | None:
+    """Indices in `text` (greedy left-to-right) matching `query`, else None.
+
+    Used by the dashboard to highlight matched characters fzf-style.
+    """
+    positions: list[int] = []
+    pos = 0
+    for ch in query:
+        idx = text.find(ch, pos)
+        if idx == -1:
+            return None
+        positions.append(idx)
+        pos = idx + 1
+    return positions
 
 
 def filter_names(names: list[str], query: str) -> list[str]:
@@ -167,7 +188,7 @@ def fuzzy_select(names: list[str], prompt_label: str = "Seleziona") -> str | Non
     app: Application = Application(
         layout=layout,
         key_bindings=kb,
-        style=_STYLE,
+        style=_build_style(),
         full_screen=True,
         mouse_support=False,
     )
@@ -254,7 +275,7 @@ def menu_select(
     app: Application = Application(
         layout=layout,
         key_bindings=kb,
-        style=_STYLE,
+        style=_build_style(),
         full_screen=True,
         mouse_support=False,
     )

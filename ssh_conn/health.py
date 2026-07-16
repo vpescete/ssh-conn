@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Callable
 
 from .store import SSHInstance
 
@@ -44,3 +45,25 @@ def check_reachability(
     if not instances:
         return {}
     return asyncio.run(_check_all(instances, timeout))
+
+
+async def check_streaming(
+    instances: dict[str, SSHInstance],
+    on_result: Callable[[str, Status], None],
+    timeout: float = DEFAULT_TIMEOUT,
+) -> dict[str, Status]:
+    """Concurrent checks reporting each result as soon as it completes.
+
+    Must run inside an existing event loop (e.g. a prompt_toolkit app);
+    `on_result(name, status)` is invoked once per instance, in completion order.
+    """
+    results: dict[str, Status] = {}
+    tasks = [
+        asyncio.create_task(_check_one(inst, timeout))
+        for inst in instances.values()
+    ]
+    for future in asyncio.as_completed(tasks):
+        name, status = await future
+        results[name] = status
+        on_result(name, status)
+    return results
