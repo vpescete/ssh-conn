@@ -54,9 +54,12 @@ install:
 	@echo "Installazione globale via pipx..."
 	@pipx install --force .
 	@echo ""
+	@echo "Controllo di eventuali config esistenti nella cartella corrente..."
+	@ssh-conn config-path || true
+	@echo ""
 	@echo "Installazione completata. Esegui: ssh-conn --help"
-	@echo "La config esistente in ./ssh_config.json è ancora utilizzabile con:"
-	@echo "  export SSH_CONN_CONFIG=$$PWD/ssh_config.json"
+	@echo "La config canonica è ~/.config/ssh-conn/config.json (usata da qualsiasi cartella)."
+	@echo "Un eventuale ./ssh_config.json legacy viene migrato lì in automatico al primo avvio."
 
 dev-install:
 	@if [ ! -d "$(VENV_NAME)" ]; then \

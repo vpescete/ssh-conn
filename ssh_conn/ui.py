@@ -10,28 +10,22 @@ from rich.console import Console
 from rich.table import Table
 from rich.text import Text
 
-from . import history, selector
+from . import history, selector, theme
 from .health import Status
 from .store import SSHInstance
 
-# Distinct shapes (not only colour) so status is legible for colour-blind users.
-HEALTH_GLYPHS: dict[Status, str] = {
-    True: "[green]✓[/green]",
-    False: "[red]✗[/red]",
-    None: "[yellow]?[/yellow]",
-}
-
 console = Console()
 
-GROUP_COLORS: dict[str, str] = {
-    "OVH": "green",
-    "GCP": "blue",
-    "CL": "cyan",
-    "OVS": "magenta",
-    "Odoo": "yellow",
-    "Buyprotect": "red",
-    "other": "white",
-}
+
+def health_glyph(status: Status) -> str:
+    """Health dot with a distinct shape (not only colour) for accessibility."""
+    palette = theme.active_palette()
+    return {
+        True: f"[{palette.health_ok}]✓[/]",
+        False: f"[{palette.health_bad}]✗[/]",
+        None: f"[{palette.health_timeout}]?[/]",
+    }.get(status, "")
+
 
 GROUP_ICONS: dict[str, str] = {
     "OVH": "☁️",
@@ -55,7 +49,7 @@ def clear_screen() -> None:
 
 def status(message: str):
     """Context manager showing an animated spinner around a blocking task."""
-    return console.status(f"[cyan]{message}[/cyan]", spinner="dots")
+    return console.status(f"[{theme.active_palette().accent}]{message}[/]", spinner="dots")
 
 
 def pause(message: str = "⏎  Premi Invio per continuare...") -> None:
@@ -84,34 +78,36 @@ def _print_with_icon(icon: str, style: str, message: str) -> None:
 
 
 def print_info(message: str) -> None:
-    _print_with_icon("ℹ️", "cyan", message)
+    _print_with_icon("ℹ️", theme.active_palette().accent, message)
 
 
 def print_success(message: str) -> None:
-    _print_with_icon("✅", "green", message)
+    _print_with_icon("✅", theme.active_palette().health_ok, message)
 
 
 def print_warning(message: str) -> None:
-    _print_with_icon("⚠️", "yellow", message)
+    _print_with_icon("⚠️", theme.active_palette().health_timeout, message)
 
 
 def print_error(message: str) -> None:
-    _print_with_icon("❌", "red", message)
+    _print_with_icon("❌", theme.active_palette().health_bad, message)
 
 
 def goodbye() -> None:
-    console.print("\n[bold cyan]👋 Arrivederci![/bold cyan]\n")
+    console.print(f"\n[bold {theme.active_palette().accent}]👋 Arrivederci![/]\n")
 
 
 def print_connecting(name: str, command: str) -> None:
-    console.print(f"[bold green]🔌 Connessione a[/] [bold]{name}[/] …")
-    console.print(f"[dim]$ {command}[/dim]")
+    palette = theme.active_palette()
+    console.print(f"[bold {palette.health_ok}]🔌 Connessione a[/] [bold]{name}[/] …")
+    console.print(f"[{palette.muted}]$ {command}[/]")
 
 
 def print_ssh_command(instance: SSHInstance) -> None:
+    palette = theme.active_palette()
     console.print(
-        f"[cyan]🔗 Comando SSH equivalente:[/cyan] "
-        f"[yellow]{format_ssh_command(instance)}[/yellow]"
+        f"[{palette.accent}]🔗 Comando SSH equivalente:[/] "
+        f"[{palette.health_timeout}]{format_ssh_command(instance)}[/]"
     )
 
 
@@ -134,9 +130,9 @@ def _menu_options(last_name: str | None) -> list[tuple[str, str]]:
 
 def render_main_menu(last_name: str | None = None, subtitle: str | None = None) -> None:
     menu = Text()
-    menu.append("\n🔐 SSH Connection Manager\n", style="bold cyan")
+    menu.append("\n🔐 SSH Connection Manager\n", style=f"bold {theme.active_palette().accent}")
     if subtitle:
-        menu.append(f"{subtitle}\n", style="dim")
+        menu.append(f"{subtitle}\n", style=theme.active_palette().muted)
     menu.append("\n")
     for key, label in _menu_options(last_name):
         menu.append(f"  {key}. ", style="bold")
@@ -208,22 +204,23 @@ def render_recents(
     recent = history.recent_names(known=set(instances.keys()), limit=limit)
     if not recent:
         return
+    palette = theme.active_palette()
     table = Table(
-        title="[bold magenta]⏱️  Recenti[/] [dim](ultimi accessi)[/]",
-        header_style="bold magenta",
-        border_style="magenta",
+        title=f"[bold {palette.recent}]⏱️  Recenti[/] [{palette.muted}](ultimi accessi)[/]",
+        header_style=f"bold {palette.recent}",
+        border_style=palette.recent,
         title_justify="left",
         show_lines=False,
     )
     table.add_column("●" if health else "", justify="center")
-    table.add_column("Nome", style="white")
-    table.add_column("Host", style="dim")
-    table.add_column("User", style="dim")
-    table.add_column("Quando", style="magenta")
+    table.add_column("Nome", style=palette.text)
+    table.add_column("Host", style=palette.muted)
+    table.add_column("User", style=palette.muted)
+    table.add_column("Quando", style=palette.recent)
     for name in recent:
         inst = instances[name]
         ago = history.time_ago(history.last_access(name) or "")
-        glyph = HEALTH_GLYPHS.get(health.get(name)) if health else ""
+        glyph = health_glyph(health.get(name)) if health else ""
         table.add_row(glyph or "", name, inst.hostname, inst.username, ago)
     console.print(table)
     console.print("")
@@ -236,8 +233,11 @@ def render_instance_table(
     show_numbers: bool = False,
     empty_message: str | None = None,
 ) -> None:
+    palette = theme.active_palette()
     if not instances:
-        console.print(f"[yellow]{empty_message or 'Nessuna istanza configurata.'}[/yellow]")
+        console.print(
+            f"[{palette.health_timeout}]{empty_message or 'Nessuna istanza configurata.'}[/]"
+        )
         return
 
     if show_recents:
@@ -253,10 +253,10 @@ def render_instance_table(
 
     for group in _sort_groups(grouped.keys()):
         members = sorted(grouped[group], key=lambda i: i.name.lower())
-        color = GROUP_COLORS.get(group, "white")
+        color = palette.group_colors.get(group, palette.text)
         icon = GROUP_ICONS.get(group, "📦")
         table = Table(
-            title=f"[bold {color}]{icon} {group}[/] [dim]({len(members)})[/]",
+            title=f"[bold {color}]{icon} {group}[/] [{palette.muted}]({len(members)})[/]",
             header_style=f"bold {color}",
             border_style=color,
             title_justify="left",
@@ -266,11 +266,11 @@ def render_instance_table(
             table.add_column("#", justify="right", style="bold")
         if health is not None:
             table.add_column("St", justify="center")
-        table.add_column("Nome", style="white")
-        table.add_column("Host", style="dim")
-        table.add_column("User", style="dim")
+        table.add_column("Nome", style=palette.text)
+        table.add_column("Host", style=palette.muted)
+        table.add_column("User", style=palette.muted)
         table.add_column("Tags", style=color)
-        table.add_column("Porta", justify="right", style="dim")
+        table.add_column("Porta", justify="right", style=palette.muted)
         table.add_column("Key", justify="center")
         for inst in members:
             tags_str = " ".join(inst.tags[:5])
@@ -285,7 +285,7 @@ def render_instance_table(
                 key_marker,
             ]
             if health is not None:
-                row.insert(0, HEALTH_GLYPHS.get(health.get(inst.name), ""))
+                row.insert(0, health_glyph(health.get(inst.name)))
             if show_numbers:
                 row.insert(0, str(number_map[inst.name]))
             table.add_row(*row)
@@ -296,14 +296,14 @@ def render_instance_table(
     summary = " · ".join(
         f"[bold]{g}[/]: {len(grouped[g])}" for g in _sort_groups(grouped.keys())
     )
-    console.print(f"[dim]Totale {total} istanze · {summary}[/]")
+    console.print(f"[{palette.muted}]Totale {total} istanze · {summary}[/]")
     if health is not None:
         up = sum(1 for v in health.values() if v is True)
         down = sum(1 for v in health.values() if v is False)
         timeout = sum(1 for v in health.values() if v is None)
         console.print(
-            f"[dim]Reachability:[/] [green]✓[/] {up} · "
-            f"[red]✗[/] {down} · [yellow]?[/] {timeout}"
+            f"[{palette.muted}]Reachability:[/] [{palette.health_ok}]✓[/] {up} · "
+            f"[{palette.health_bad}]✗[/] {down} · [{palette.health_timeout}]?[/] {timeout}"
         )
 
 
@@ -349,8 +349,9 @@ def prompt_menu_choice(valid: tuple[str, ...]) -> str | None:
 def select_instance_fuzzy(
     instances: dict[str, SSHInstance], prompt_label: str = "Cerca istanza"
 ) -> str | None:
+    palette = theme.active_palette()
     if not instances:
-        console.print("[yellow]Nessuna istanza disponibile.[/yellow]")
+        console.print(f"[{palette.health_timeout}]Nessuna istanza disponibile.[/]")
         return None
     names = sorted(instances.keys())
     if selector.is_available():
@@ -359,7 +360,7 @@ def select_instance_fuzzy(
             return selector.fuzzy_select(names, prompt_label=prompt_label)
         except Exception as exc:  # noqa: BLE001 — degrade to the typed prompt below
             console.print(
-                f"[dim]Selettore interattivo non disponibile ({exc}); uso input testuale.[/dim]"
+                f"[{palette.muted}]Selettore interattivo non disponibile ({exc}); uso input testuale.[/]"
             )
     completer = FuzzyCompleter(WordCompleter(names, match_middle=True, ignore_case=True))
     try:
@@ -384,9 +385,9 @@ def select_instance_fuzzy(
         return substring_matches[0]
     if len(substring_matches) > 1:
         console.print(
-            f"[yellow]Match ambiguo per '{query}':[/yellow] "
+            f"[{palette.health_timeout}]Match ambiguo per '{query}':[/] "
             f"{', '.join(substring_matches[:5])}"
         )
         return None
-    console.print(f"[red]Nessuna istanza trovata per '{query}'.[/red]")
+    console.print(f"[{palette.health_bad}]Nessuna istanza trovata per '{query}'.[/]")
     return None

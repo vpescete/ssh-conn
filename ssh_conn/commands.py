@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Iterable
@@ -26,9 +27,34 @@ def config_path() -> Path:
     env = os.environ.get("SSH_CONN_CONFIG")
     if env:
         return Path(env).expanduser()
-    if LEGACY_CWD_CONFIG.exists():
-        return LEGACY_CWD_CONFIG
     return DEFAULT_USER_CONFIG
+
+
+def migrate_legacy_config() -> Path | None:
+    """Copy a legacy ./ssh_config.json into the canonical location, once.
+
+    Runs only when no --config/env is set, the canonical file does not yet
+    exist, and a legacy file exists in the current directory. Non-destructive
+    (copy, not move) so nothing is lost. Returns the target path if it copied.
+    """
+    if _CONFIG_OVERRIDE is not None or os.environ.get("SSH_CONN_CONFIG"):
+        return None
+    legacy = LEGACY_CWD_CONFIG
+    target = DEFAULT_USER_CONFIG
+    if target.exists() or not legacy.exists():
+        return None
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(legacy, target)
+    except OSError as exc:
+        ui.print_warning(f"Migrazione config non riuscita ({exc}).")
+        return None
+    ui.print_success(f"Config migrata in {target}")
+    ui.print_info(
+        f"Trovato {legacy.resolve()} nella cartella corrente e copiato nella "
+        "sede canonica (usata da qualsiasi directory). L'originale è rimasto al suo posto."
+    )
+    return target
 
 
 def load() -> dict[str, store.SSHInstance]:

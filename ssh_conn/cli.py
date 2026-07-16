@@ -6,7 +6,7 @@ from typing import Optional
 
 import typer
 
-from . import __version__, commands, health, ui
+from . import __version__, commands, health, theme, ui
 
 app = typer.Typer(
     help="SSH Connection Manager — gestione istanze SSH.",
@@ -51,7 +51,10 @@ def _interactive_loop() -> int:
     while True:
         ui.clear_screen()
         last = commands.last_used_name(instances)
-        subtitle = f"{len(instances)} istanze · config: {commands.config_path()}"
+        subtitle = (
+            f"{len(instances)} istanze · tema {theme.active_mode()} · "
+            f"config: {commands.config_path()}"
+        )
         choice = ui.main_menu(last_name=last, subtitle=subtitle)
         if choice is None or choice == "q":
             ui.goodbye()
@@ -78,8 +81,13 @@ def _default(
         is_eager=True,
         help="Mostra la versione ed esci.",
     ),
+    theme_opt: Optional[str] = typer.Option(
+        None, "--theme", help="Forza il tema colori: dark | light | auto (default: auto)."
+    ),
 ) -> None:
+    theme.set_theme(theme_opt)
     commands.set_config_path(config)
+    commands.migrate_legacy_config()
     if ctx.invoked_subcommand is None:
         raise typer.Exit(code=_interactive_loop())
 

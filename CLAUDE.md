@@ -53,8 +53,9 @@ cli.py         Typer app. Subcommands + interactive loop dispatch. Thin wrappers
 
 1. `--config PATH` / `-c` (sets a module-level `_CONFIG_OVERRIDE` via `set_config_path`)
 2. `$SSH_CONN_CONFIG`
-3. `./ssh_config.json` — **legacy cwd fallback**: running from the project directory picks up the local file (gitignored). Be aware of this when debugging "wrong config loaded".
-4. `~/.config/ssh-conn/config.json` (default)
+3. `~/.config/ssh-conn/config.json` (default) — **cwd-independent**; there is no longer a `./ssh_config.json` cwd fallback.
+
+`commands.migrate_legacy_config()` (called once from the Typer callback, and by `make install`) copies a legacy `./ssh_config.json` from the cwd into the canonical location the first time the app runs — but only when no override/env is set and the canonical file doesn't exist yet. It is non-destructive (copy, not move). This replaces the old silent cwd fallback so the working directory can no longer shadow the real config.
 
 History is separate: `~/.config/ssh-conn/history.json`, override with `$SSH_CONN_HISTORY`. Health results are never persisted.
 
