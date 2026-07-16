@@ -32,7 +32,7 @@ class Palette:
 _DARK = Palette(
     mode="dark",
     text="white",
-    muted="grey70",
+    muted="#b2b2b2",  # hex: valid for both rich and prompt_toolkit styles
     accent="cyan",
     recent="magenta",
     health_ok="green",
@@ -53,7 +53,7 @@ _DARK = Palette(
 _LIGHT = Palette(
     mode="light",
     text="black",
-    muted="grey37",
+    muted="#5f5f5f",  # hex: valid for both rich and prompt_toolkit styles
     accent="dark_cyan",
     recent="magenta3",
     health_ok="green4",

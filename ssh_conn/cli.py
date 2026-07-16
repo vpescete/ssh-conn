@@ -1,12 +1,13 @@
 """Typer-based CLI entry point. No args → interactive loop."""
 from __future__ import annotations
 
+import os
 import sys
 from typing import Optional
 
 import typer
 
-from . import __version__, commands, health, theme, ui
+from . import __version__, commands, health, selector, settings, theme, ui
 
 app = typer.Typer(
     help="SSH Connection Manager — gestione istanze SSH.",
@@ -41,6 +42,24 @@ def _complete_instance_names(incomplete: str) -> list[str]:
     return [name for name in instances if incomplete.lower() in name.lower()]
 
 
+def _maybe_save_ui_default() -> None:
+    """After the user tries the dashboard, offer once to persist a preference."""
+    if settings.ui_preference() is not None:
+        return
+    if commands.has_ui_override() or os.environ.get("SSH_CONN_UI"):
+        return
+    if ui.prompt_confirm(
+        "Impostare la dashboard come interfaccia predefinita?", default=False
+    ):
+        saved = settings.save_setting("ui", "dashboard")
+        message = "Dashboard predefinita (torna al menu con: ssh-conn ui menu)."
+    else:
+        saved = settings.save_setting("ui", "menu")
+        message = "Resta il menu classico (dashboard con la voce 'd' o --ui dashboard)."
+    if saved:
+        ui.print_info(message)
+
+
 def _interactive_loop() -> int:
     try:
         instances = commands.load()
@@ -48,7 +67,23 @@ def _interactive_loop() -> int:
         ui.print_error(f"Impossibile caricare {commands.config_path()}: {exc}")
         return 1
 
+    mode = commands.ui_mode()
     while True:
+        if mode == "dashboard":
+            if not selector.is_available():
+                ui.print_warning(
+                    "La dashboard richiede un terminale interattivo; uso il menu classico."
+                )
+                mode = "menu"
+                continue
+            outcome = commands.dashboard_loop(instances)
+            _maybe_save_ui_default()
+            if outcome == "menu":
+                mode = "menu"
+                continue
+            ui.goodbye()
+            return 0
+
         ui.clear_screen()
         last = commands.last_used_name(instances)
         subtitle = (
@@ -59,6 +94,9 @@ def _interactive_loop() -> int:
         if choice is None or choice == "q":
             ui.goodbye()
             return 0
+        if choice == "d":
+            mode = "dashboard"
+            continue
         if choice == "":
             ui.print_error("Scelta non valida.")
             ui.pause()
@@ -84,8 +122,16 @@ def _default(
     theme_opt: Optional[str] = typer.Option(
         None, "--theme", help="Forza il tema colori: dark | light | auto (default: auto)."
     ),
+    ui_opt: Optional[str] = typer.Option(
+        None, "--ui", help="Interfaccia interattiva: menu | dashboard."
+    ),
 ) -> None:
+    normalized_ui = ui_opt.strip().lower() if ui_opt else None
+    if normalized_ui is not None and normalized_ui not in commands.VALID_UI:
+        ui.print_error(f"Valore --ui non valido: '{ui_opt}' (usa: menu | dashboard).")
+        raise typer.Exit(code=2)
     theme.set_theme(theme_opt)
+    commands.set_ui_mode(normalized_ui)
     commands.set_config_path(config)
     commands.migrate_legacy_config()
     if ctx.invoked_subcommand is None:
@@ -191,6 +237,36 @@ def cmd_import(
 @app.command("config-path", help="Stampa il path della config attualmente in uso.")
 def cmd_config_path() -> None:
     typer.echo(str(commands.config_path()))
+
+
+@app.command("restore", help="Ripristina l'ultima istanza eliminata.")
+def cmd_restore() -> None:
+    instances = commands.load()
+    raise typer.Exit(code=commands.restore_last(instances))
+
+
+@app.command("doctor", help="Diagnostica ambiente e configurazione.")
+def cmd_doctor() -> None:
+    raise typer.Exit(code=commands.doctor())
+
+
+@app.command("ui", help="Mostra o imposta l'interfaccia predefinita (menu | dashboard).")
+def cmd_ui(
+    mode: Optional[str] = typer.Argument(
+        None, help="menu | dashboard (vuoto: mostra quella attiva)."
+    ),
+) -> None:
+    if mode is None:
+        typer.echo(commands.ui_mode())
+        return
+    normalized = mode.strip().lower()
+    if normalized not in commands.VALID_UI:
+        ui.print_error(f"Valore non valido: '{mode}' (usa: menu | dashboard).")
+        raise typer.Exit(code=2)
+    if not settings.save_setting("ui", normalized):
+        ui.print_error("Impossibile salvare le impostazioni.")
+        raise typer.Exit(code=1)
+    ui.print_success(f"Interfaccia predefinita: {normalized}")
 
 
 def run() -> None:

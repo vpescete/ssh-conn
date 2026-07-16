@@ -123,6 +123,7 @@ def _menu_options(last_name: str | None) -> list[tuple[str, str]]:
         ("5", "🗑️  Elimina istanza"),
         ("6", "🩺 Health check"),
         ("7", "📥 Importa da ~/.ssh/config"),
+        ("d", "🧭 Dashboard (interfaccia a schermo intero)"),
         ("q", "🚪 Esci"),
     ]
     return options
