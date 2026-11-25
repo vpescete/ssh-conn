@@ -119,7 +119,7 @@ def _menu_options(last_name: str | None) -> list[tuple[str, str]]:
         ("1", "📋 Lista istanze"),
         ("2", "🔌 Connetti a istanza"),
         ("3", "➕ Aggiungi istanza"),
-        ("4", "✏️  Modifica istanza"),
+        ("4", "✏️  Modifica o rinomina istanza"),
         ("5", "🗑️  Elimina istanza"),
         ("6", "🩺 Health check"),
         ("7", "📥 Importa da ~/.ssh/config"),

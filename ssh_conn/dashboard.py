@@ -78,7 +78,7 @@ _HELP_KEYS: tuple[tuple[str, str], ...] = (
     ("⏎", "connetti all'istanza selezionata"),
     ("↑ ↓", "naviga · PgSu/PgGiù salta"),
     ("testo", "filtra (fuzzy, come fzf)"),
-    ("Ctrl-E", "modifica selezionata"),
+    ("Ctrl-E", "modifica o rinomina selezionata"),
     ("Ctrl-D", "elimina selezionata"),
     ("Ctrl-N", "nuova istanza"),
     ("Ctrl-T", "(ri)esegui health check"),

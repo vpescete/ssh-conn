@@ -84,6 +84,24 @@ def record_access(name: str) -> None:
         pass
 
 
+def rename_entry(old: str, new: str) -> None:
+    """Move the history of `old` under `new`, so a rename keeps recency/frecency.
+
+    A stale entry already stored under `new` (e.g. a deleted instance with the
+    same name) is replaced. No-op when `old` has no history.
+    """
+    history = load_history()
+    if old == new or old not in history:
+        return
+    updated = {k: v for k, v in history.items() if k not in (old, new)}
+    updated[new] = history[old]
+    try:
+        with _history_path().open("w") as f:
+            json.dump(updated, f, indent=2)
+    except OSError:
+        pass  # history is best-effort, like record_access
+
+
 def recent_names(known: set[str] | None = None, limit: int = 5) -> list[str]:
     history = load_history()
     items = sorted(history.items(), key=lambda kv: kv[1]["last"], reverse=True)

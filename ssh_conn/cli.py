@@ -188,6 +188,22 @@ def cmd_edit(
     commands.edit_interactive(instances, name=resolved)
 
 
+@app.command("rename", help="Rinomina un'istanza (lo storico accessi la segue).")
+def cmd_rename(
+    name: str = typer.Argument(
+        ..., help="Nome attuale (o substring).", autocompletion=_complete_instance_names
+    ),
+    new_name: Optional[str] = typer.Argument(
+        None, help="Nuovo nome; se omesso lo chiede, precompilato con quello attuale."
+    ),
+) -> None:
+    instances = commands.load()
+    resolved = commands.resolve_name(instances, name)
+    if not resolved:
+        raise typer.Exit(code=1)
+    raise typer.Exit(code=commands.rename_instance(instances, resolved, new_name))
+
+
 @app.command("delete", help="Elimina un'istanza esistente.")
 def cmd_delete(
     name: str = typer.Argument(
