@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
@@ -113,6 +114,81 @@ def _parse_port(value: str) -> int | None:
         ui.print_error(f"Porta fuori range (1-65535): {port}.")
         return None
     return port
+
+
+def _checked_name(
+    instances: dict[str, store.SSHInstance], old: str, raw: str
+) -> str | None:
+    """`raw` stripped if it can become the name of `old`; None (with error) otherwise."""
+    new = raw.strip()
+    if not new:
+        ui.print_error("Il nome non può essere vuoto.")
+        return None
+    if new != old and new in instances:
+        ui.print_error(f"Esiste già un'istanza '{new}'.")
+        return None
+    return new
+
+
+def _ask_new_name(
+    instances: dict[str, store.SSHInstance], old: str, label: str
+) -> str | None:
+    """Prompt for a name pre-filled with `old`; None on cancel or invalid name."""
+    raw = ui.prompt_optional(label, default=old)
+    if raw is None:
+        ui.print_warning("Annullato.")
+        return None
+    return _checked_name(instances, old, raw)
+
+
+def _replace_instance(
+    instances: dict[str, store.SSHInstance],
+    old_name: str,
+    updated: store.SSHInstance,
+) -> None:
+    """Put `updated` where `old_name` was (same position in the file) and save.
+
+    On a rename the access history follows the new name, so recency and
+    frecency are kept.
+    """
+    rebuilt = {
+        (updated.name if name == old_name else name): (
+            updated if name == old_name else inst
+        )
+        for name, inst in instances.items()
+    }
+    instances.clear()
+    instances.update(rebuilt)
+    _save(instances)
+    if updated.name != old_name:
+        history.rename_entry(old_name, updated.name)
+
+
+def _print_renamed(before: store.SSHInstance, after: store.SSHInstance) -> None:
+    ui.print_success(f"Istanza '{before.name}' rinominata in '{after.name}'.")
+    if before.group != after.group:
+        ui.print_info(f"Gruppo: {before.group} → {after.group}")
+
+
+def rename_instance(
+    instances: dict[str, store.SSHInstance], old: str, new: str | None = None
+) -> int:
+    """Rename `old` to `new` (asked, pre-filled, when None). Returns an exit code."""
+    if new is None:
+        checked = _ask_new_name(instances, old, "Nuovo nome")
+    else:
+        checked = _checked_name(instances, old, new)
+    if checked is None:
+        return 1
+    if checked == old:
+        ui.print_info("Nome invariato.")
+        return 0
+    current = instances[old]
+    group, tags = store.derive_group_and_tags(checked)
+    updated = replace(current, name=checked, group=group, tags=tags)
+    _replace_instance(instances, old, updated)
+    _print_renamed(current, updated)
+    return 0
 
 
 def resolve_name(
@@ -303,6 +379,10 @@ def edit_interactive(
         f"\n=== Modifica '{name}' === (Invio per mantenere il valore attuale)\n"
     )
 
+    new_name = _ask_new_name(instances, name, "Nome")
+    if new_name is None:
+        return
+
     new_hostname = ui.prompt_optional("Hostname", default=current.hostname)
     if new_hostname is None:
         ui.print_warning("Annullato.")
@@ -346,9 +426,9 @@ def edit_interactive(
                 return
             new_port = parsed
 
-    group, tags = store.derive_group_and_tags(name)
-    instances[name] = store.SSHInstance(
-        name=name,
+    group, tags = store.derive_group_and_tags(new_name)
+    updated = store.SSHInstance(
+        name=new_name,
         hostname=new_hostname,
         username=new_username,
         port=new_port,
@@ -356,9 +436,12 @@ def edit_interactive(
         group=group,
         tags=tags,
     )
-    _save(instances)
-    ui.print_success(f"Istanza '{name}' aggiornata.")
-    ui.print_ssh_command(instances[name])
+    _replace_instance(instances, name, updated)
+    if new_name != name:
+        _print_renamed(current, updated)
+    else:
+        ui.print_success(f"Istanza '{name}' aggiornata.")
+    ui.print_ssh_command(updated)
 
 
 def delete_interactive(
@@ -605,6 +688,8 @@ def dashboard_loop(instances: dict[str, store.SSHInstance]) -> str:
             continue
         if action == "edit" and name:
             edit_interactive(instances, name=name)
+            # Renamed or re-pointed: drop the old result so it is checked again.
+            health_cache.pop(name, None)
         elif action == "delete" and name:
             delete_interactive(instances, name=name)
             health_cache.pop(name, None)

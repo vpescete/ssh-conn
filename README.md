@@ -68,7 +68,7 @@ Menu principale:
 1. Lista istanze
 2. Connetti a istanza
 3. Aggiungi istanza
-4. Modifica istanza
+4. Modifica o rinomina istanza
 5. Elimina istanza
 6. Health check
 7. Importa da ~/.ssh/config
@@ -92,7 +92,7 @@ Tasti principali:
 | `⏎` | connetti alla selezionata |
 | `↑↓` / PgSu/PgGiù | naviga |
 | testo | filtra (fuzzy) |
-| `Ctrl-E` / `Ctrl-D` / `Ctrl-N` | modifica / elimina / nuova |
+| `Ctrl-E` / `Ctrl-D` / `Ctrl-N` | modifica o rinomina / elimina / nuova |
 | `Ctrl-T` | (ri)esegui health check |
 | `Ctrl-Y` | copia comando ssh negli appunti |
 | `Ctrl-O` | pannello dettagli on/off |
@@ -108,7 +108,8 @@ ssh-conn list ovh prod              # tabella filtrata
 ssh-conn list --health              # tabella + reachability
 ssh-conn health                     # check parallelo su tutte
 ssh-conn health ovh                 # solo OVH
-ssh-conn edit "OVH - Nixie Core"    # modifica
+ssh-conn edit "OVH - Nixie Core"    # modifica (nome compreso)
+ssh-conn rename vesp "OVH - Vespa"  # rinomina; senza nuovo nome lo chiede precompilato
 ssh-conn delete vespa               # elimina con conferma
 ssh-conn import-ssh --source ~/.ssh/config
 ssh-conn config-path                # stampa il file di config in uso

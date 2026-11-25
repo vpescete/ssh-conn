@@ -48,7 +48,7 @@ full-screen dashboard. Resolution order for which one starts: `--ui` >
 
 ## Critical invariants — read before editing
 
-- **`group` and `tags` are derived, never persisted.** `store.derive_group_and_tags(name)` computes them from the instance *name* every time it's loaded. The JSON on disk holds only `hostname`, `username`, `port`, `key_path` (see `SSHInstance.to_dict()`). Any code that constructs an `SSHInstance` must call `derive_group_and_tags(name)` for the `group`/`tags` args, or those fields silently default to `other`/`()`. Renaming an instance re-derives its group/tags.
+- **`group` and `tags` are derived, never persisted.** `store.derive_group_and_tags(name)` computes them from the instance *name* every time it's loaded. The JSON on disk holds only `hostname`, `username`, `port`, `key_path` (see `SSHInstance.to_dict()`). Any code that constructs an `SSHInstance` must call `derive_group_and_tags(name)` for the `group`/`tags` args, or those fields silently default to `other`/`()`. Renaming an instance re-derives its group/tags. Renames go through `commands._replace_instance` (shared by `edit_interactive` and `rename_instance`): it keeps the entry's position in the JSON and moves the access history (`history.rename_entry`).
 
 - **Group detection matches a known prefix only at the *start* of the name** (`_GROUP_PATTERN` anchored with `^`). Known groups: `OVH, GCP, CL, Buyprotect, Odoo, OVS`. `"Schalcon GCP"` → `other`, not `GCP`. To add a group you must update **both** `store.KNOWN_GROUPS` and the `ui.GROUP_COLORS` / `ui._GROUP_ORDER` tables.
 
